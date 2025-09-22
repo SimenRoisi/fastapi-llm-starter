@@ -22,7 +22,7 @@ It is designed as a learning project and a foundation for future Retrieval-Augme
 
 ### 1. Clone the repo
 ```bash
-git clone https://github.com/<your-username>/fastapi-llm-starter.git
+git clone https://github.com/SimenRoisi/fastapi-llm-starter.git
 cd fastapi-llm-starter
 ```
 ### 2. Create a .env file
