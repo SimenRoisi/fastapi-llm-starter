@@ -36,15 +36,16 @@ DB_NAME=appdb
 OPENAI_API_KEY=sk-...
 ```
 3. Build and start services
+```
 docker compose up --build
-
-This starts:
-API at http://localhost:8000
-Swagger docs at http://localhost:8000/docs
-Adminer DB UI at http://localhost:8080
-
+```
+This starts:  
+API at http://localhost:8000  
+Swagger docs at http://localhost:8000/docs  
+Adminer DB UI at http://localhost:8080  
+```
 docker compose exec api alembic upgrade head
-
+```
 5. Try the API
 
 Create a user:
