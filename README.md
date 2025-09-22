@@ -26,7 +26,7 @@ git clone https://github.com/SimenRoisi/fastapi-llm-starter.git
 cd fastapi-llm-starter
 ```
 ### 2. Create a .env file
-Copy .env.example → .env and fill in your own values:
+Copy .env.example → .env and fill in your own values:  
 ```
 DB_USER=app
 DB_PASS=devpass
@@ -35,7 +35,7 @@ DB_PORT=5432
 DB_NAME=appdb
 OPENAI_API_KEY=sk-...
 ```
-3. Build and start services
+3. Build and start services  
 ```
 docker compose up --build
 ```
@@ -46,16 +46,16 @@ Adminer DB UI at http://localhost:8080
 ```
 docker compose exec api alembic upgrade head
 ```
-5. Try the API
+5. Try the API  
 
-Create a user:
+Create a user:  
 ```
 curl -X POST http://localhost:8000/users \
      -H "Content-Type: application/json" \
      -d '{"email":"me@example.com","api_key":"my-test-key"}'
 ```
 
-Call the assistant endpoint:
+Call the assistant endpoint:  
 ```
 curl -X POST http://localhost:8000/assist \
      -H "Content-Type: application/json" \
@@ -63,11 +63,11 @@ curl -X POST http://localhost:8000/assist \
      -d '{"prompt":"Hello, who are you?"}'
 ```
 
-🛠 Tech Stack
-Language: Python 3.12
-Framework: FastAPI
-Database: PostgreSQL
-ORM: SQLAlchemy 2.x
-Migrations: Alembic
-LLM API: OpenAI SDK
-Containerization: Docker & Docker Compose
+🛠 Tech Stack  
+Language: Python 3.12  
+Framework: FastAPI  
+Database: PostgreSQL  
+ORM: SQLAlchemy 2.x  
+Migrations: Alembic  
+LLM API: OpenAI SDK  
+Containerization: Docker & Docker Compose  
