@@ -27,13 +27,14 @@ cd fastapi-llm-starter
 ```
 ### 2. Create a .env file
 Copy .env.example → .env and fill in your own values:
+```
 DB_USER=app
 DB_PASS=devpass
 DB_HOST=db
 DB_PORT=5432
 DB_NAME=appdb
 OPENAI_API_KEY=sk-...
-
+```
 3. Build and start services
 docker compose up --build
 
