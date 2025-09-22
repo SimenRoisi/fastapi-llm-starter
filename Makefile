@@ -1,4 +1,4 @@
-# Variables (keep these in sync with your .env if you change them)
+# Variables
 DB_HOST := localhost
 DB_PORT := 5432
 DB_USER := app
