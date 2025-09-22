@@ -1,0 +1,26 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Env files (never commit secrets!)
+.env
+
+# Alembic caches
+alembic/*/__pycache__/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
+pgdata/
