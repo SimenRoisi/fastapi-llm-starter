@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2
+asyncpg
+psycopg[binary]
+python-dotenv
+pydantic
+email-validator
+openai>=1.0
+alembic
