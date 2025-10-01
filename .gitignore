@@ -28,3 +28,6 @@ pgdata/
 # copilot
 .vscode/
 copilot-instructions.md
+
+#Rag
+RAG_GUIDE.md
