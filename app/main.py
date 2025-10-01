@@ -18,6 +18,7 @@ from .schemas import (
 )
 from .llm import chat_once
 from .auth import hash_api_key, verify_api_key
+from .rag_endpoints import router as rag_router
 
 
 @asynccontextmanager
@@ -31,6 +32,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Minimal API", lifespan=lifespan)
+
+# Include RAG router
+app.include_router(rag_router)
 
 
 # --- Auth / Current user dependency ----------------------------------------- #

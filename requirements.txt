@@ -9,3 +9,5 @@ email-validator
 openai>=1.0
 alembic
 bcrypt
+tiktoken
+numpy
