@@ -15,6 +15,8 @@ config = context.config
 db_url = os.getenv("DATABASE_URL", "")
 if db_url.startswith("postgresql+asyncpg"):
     db_url = db_url.replace("postgresql+asyncpg", "postgresql+psycopg")
+elif db_url.startswith("sqlite+aiosqlite"):
+    db_url = db_url.replace("sqlite+aiosqlite", "sqlite")
 
 config.set_main_option("sqlalchemy.url", db_url)
 

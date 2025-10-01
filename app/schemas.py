@@ -8,7 +8,6 @@ class UserCreate(BaseModel):
 class UserOut(BaseModel):
     id: int
     email: EmailStr
-    api_key: str
     created_at: datetime
 
 class UsageCreate(BaseModel):
@@ -16,7 +15,6 @@ class UsageCreate(BaseModel):
     
 class UsageOut(BaseModel):
     id: int
-    api_key: str
     endpoint: str
     timestamp: datetime
 

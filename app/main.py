@@ -17,6 +17,7 @@ from .schemas import (
     DocumentCreate, DocumentOut,
 )
 from .llm import chat_once
+from .auth import hash_api_key, verify_api_key
 
 
 @asynccontextmanager
@@ -37,10 +38,15 @@ async def get_current_user(
     x_api_key: Annotated[str, Header(..., alias="X-API-Key")],
     session: AsyncSession = Depends(get_session),
 ) -> User:
-    user = await session.scalar(select(User).where(User.api_key == x_api_key))
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return user
+    # Since API keys are hashed, we need to check each user
+    # TODO: Optimize this with a more efficient lookup method
+    users = (await session.execute(select(User))).scalars().all()
+    
+    for user in users:
+        if verify_api_key(x_api_key, user.api_key):
+            return user
+    
+    raise HTTPException(status_code=401, detail="Invalid API key")
 
 
 # --- Health & root ----------------------------------------------------------- #
@@ -60,7 +66,9 @@ def root():
 # --- Users ------------------------------------------------------------------- #
 @app.post("/users", response_model=UserOut, status_code=201)
 async def create_user(payload: UserCreate, session: AsyncSession = Depends(get_session)):
-    user = User(email=payload.email, api_key=payload.api_key)
+    # Hash the API key before storing
+    hashed_api_key = hash_api_key(payload.api_key)
+    user = User(email=payload.email, api_key=hashed_api_key)
     session.add(user)
     try:
         await session.commit()
@@ -87,8 +95,7 @@ async def record_usage(
     session.add(row)
     await session.commit()
     await session.refresh(row)
-    # Keep response contract that includes api_key for now
-    return UsageOut(id=row.id, api_key=user.api_key, endpoint=row.endpoint, timestamp=row.timestamp)
+    return UsageOut(id=row.id, endpoint=row.endpoint, timestamp=row.timestamp)
 
 
 @app.get("/usage", response_model=list[UsageOut])
@@ -105,7 +112,7 @@ async def usage_for_current_user(
     )
     rows = (await session.execute(q)).scalars().all()
     return [
-        UsageOut(id=r.id, api_key=user.api_key, endpoint=r.endpoint, timestamp=r.timestamp)
+        UsageOut(id=r.id, endpoint=r.endpoint, timestamp=r.timestamp)
         for r in rows
     ]
 

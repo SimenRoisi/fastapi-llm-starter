@@ -24,3 +24,7 @@ Thumbs.db
 # Docker
 *.log
 pgdata/
+
+# copilot
+.vscode/
+copilot-instructions.md

@@ -15,7 +15,8 @@ async def test_create_and_list_users():
         assert r.status_code == 201, r.text
         data = r.json()
         assert data["email"] == email
-        assert data["api_key"] == api_key
+        # API key should NOT be in response for security
+        assert "api_key" not in data
         assert "id" in data and "created_at" in data
 
         # list
@@ -36,16 +37,22 @@ async def test_usage_flow():
         r = await ac.post("/users", json={"email": email, "api_key": api_key})
         assert r.status_code == 201
 
-        # record usage
-        r = await ac.post("/usage", json={"api_key": api_key, "endpoint": "/rates"})
+        # Set up authentication headers
+        headers = {"X-API-Key": api_key}
+
+        # record usage (uses auth header, not body)
+        r = await ac.post("/usage", json={"endpoint": "/rates"}, headers=headers)
         assert r.status_code == 201
         row = r.json()
-        assert row["api_key"] == api_key
+        # API key should NOT be in response
+        assert "api_key" not in row
         assert row["endpoint"] == "/rates"
 
-        # fetch recent usage
-        r = await ac.get(f"/usage/{api_key}?limit=5")
+        # fetch recent usage (uses auth header, not URL parameter)
+        r = await ac.get("/usage?limit=5", headers=headers)
         assert r.status_code == 200
         rows = r.json()
         assert len(rows) >= 1
-        assert rows[0]["api_key"] == api_key
+        # API key should NOT be in usage responses
+        assert "api_key" not in rows[0]
+        assert rows[0]["endpoint"] == "/rates"
