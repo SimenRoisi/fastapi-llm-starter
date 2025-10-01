@@ -1,49 +1,63 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy import text, select, desc, func, Integer
+from datetime import datetime, timedelta, timezone
+from typing import Annotated
+
+from fastapi import FastAPI, Depends, HTTPException, Header, Query
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from fastapi import Header, Query
 from openai import APIError, OpenAIError
-from datetime import datetime, timedelta, timezone  
 
 from .db import engine, get_session
-from .schemas import UserCreate, UserOut, UsageOut, UsageCreate, AssistRequest, AssistResponse, UsageSummary, DocumentCreate, DocumentOut
-from .llm import chat_once
 from .models import Document, User, ApiUsage
+from .schemas import (
+    UserCreate, UserOut,
+    UsageOut, UsageCreate, UsageSummary,
+    AssistRequest, AssistResponse,
+    DocumentCreate, DocumentOut,
+)
+from .llm import chat_once
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # startup: 
-    print('startup')
+    # startup
+    print("startup")
     yield
-    # shutdown:
-    print('shutdown')
+    # shutdown
+    print("shutdown")
     await engine.dispose()
 
 
 app = FastAPI(title="Minimal API", lifespan=lifespan)
 
-async def require_api_key(
-        x_api_key: str = Header(..., alias="X-API-Key"),
-        session: AsyncSession = Depends(get_session),
-) -> str:
-    if not x_api_key:
-        raise HTTPException(status_code=401, detail = "Missing X-API key")
-    res = await session.execute(
-        text("SELECT 1 FROM users WHERE api_key = :k"),
-        {"k": x_api_key},
-    )
-    if res.scalar() is None:
-        raise HTTPException(status_code=401, detail = "Invalid API key")
-    return x_api_key
 
+# --- Auth / Current user dependency ----------------------------------------- #
+async def get_current_user(
+    x_api_key: Annotated[str, Header(..., alias="X-API-Key")],
+    session: AsyncSession = Depends(get_session),
+) -> User:
+    user = await session.scalar(select(User).where(User.api_key == x_api_key))
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return user
+
+
+# --- Health & root ----------------------------------------------------------- #
 @app.get("/healthz")
 async def healthz():
+    # Simple DB liveness check
     async with engine.connect() as conn:
-        await conn.execute(text("SELECT 1"))
+        await conn.exec_driver_sql("SELECT 1")
     return {"status": "ok"}
 
+
+@app.get("/")
+def root():
+    return {"service": "Minimal API", "docs": "/docs"}
+
+
+# --- Users ------------------------------------------------------------------- #
 @app.post("/users", response_model=UserOut, status_code=201)
 async def create_user(payload: UserCreate, session: AsyncSession = Depends(get_session)):
     user = User(email=payload.email, api_key=payload.api_key)
@@ -56,45 +70,73 @@ async def create_user(payload: UserCreate, session: AsyncSession = Depends(get_s
     await session.refresh(user)
     return user
 
+
 @app.get("/users", response_model=list[UserOut])
 async def list_users(session: AsyncSession = Depends(get_session)):
-    rows = (await session.execute(select(User).order_by(User.id))).scalars().all()
-    return rows
+    return (await session.execute(select(User).order_by(User.id))).scalars().all()
 
+
+# --- Usage logging ----------------------------------------------------------- #
 @app.post("/usage", response_model=UsageOut, status_code=201)
 async def record_usage(
-    payload: UsageCreate, 
+    payload: UsageCreate,
     session: AsyncSession = Depends(get_session),
-    api_key: str = Depends(require_api_key)):     # <-- comes from X-API-Key
-    
-    row = ApiUsage(api_key=api_key, endpoint=payload.endpoint)
+    user: User = Depends(get_current_user),
+):
+    row = ApiUsage(user_id=user.id, endpoint=payload.endpoint)
     session.add(row)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        raise HTTPException(status_code=400, detail="api_key not found or invalid")
+    await session.commit()
     await session.refresh(row)
-    return row
-    
-@app.get("/usage/{api_key}", response_model=list[UsageOut])
-async def usage_for_key(api_key: str, limit: int=100, session: AsyncSession=Depends(get_session)):
-    q = (select(ApiUsage)
-         .where(ApiUsage.api_key == api_key)
-         .order_by(desc(ApiUsage.timestamp))
-         .limit(limit))
-    return (await session.execute(q)).scalars().all()
-
-@app.get("/")
-def root():
-    return {"service": "Minimal API", "docs": "/docs"}
+    # Keep response contract that includes api_key for now
+    return UsageOut(id=row.id, api_key=user.api_key, endpoint=row.endpoint, timestamp=row.timestamp)
 
 
+@app.get("/usage", response_model=list[UsageOut])
+async def usage_for_current_user(
+    limit: int = Query(100, ge=1, le=1000),
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    q = (
+        select(ApiUsage)
+        .where(ApiUsage.user_id == user.id)
+        .order_by(desc(ApiUsage.timestamp))
+        .limit(limit)
+    )
+    rows = (await session.execute(q)).scalars().all()
+    return [
+        UsageOut(id=r.id, api_key=user.api_key, endpoint=r.endpoint, timestamp=r.timestamp)
+        for r in rows
+    ]
+
+@app.get("/usage/summary", response_model=list[UsageSummary])
+async def usage_summary(
+    hours: int = Query(24, ge=1, le=24 * 30),
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    q = (
+        select(ApiUsage.endpoint, func.count().label("calls"))
+        .where(ApiUsage.user_id == user.id, ApiUsage.timestamp >= cutoff)
+        .group_by(ApiUsage.endpoint)
+        .order_by(func.count().desc())
+    )
+    rows = await session.execute(q)
+    return [UsageSummary(endpoint=e, calls=int(c)) for e, c in rows.all()]
+
+
+# --- Assist (LLM proxy) ------------------------------------------------------ #
 @app.post("/assist", response_model=AssistResponse)
-async def assist(body: AssistRequest,
-                 session: AsyncSession = Depends(get_session),
-                 api_key: str = Depends(require_api_key)):
-    system_prompt = "Du er en hjelpsom AI-assistent for kundeservice. Svar kort, presist og hjelpsomt."
+async def assist(
+    body: AssistRequest,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    system_prompt = (
+        "Du er en hjelpsom AI-assistent for kundeservice. "
+        "Svar kort, presist og hjelpsomt."
+    )
     try:
         reply = await chat_once(system_prompt, body.prompt)
     except (APIError, OpenAIError) as e:
@@ -102,51 +144,34 @@ async def assist(body: AssistRequest,
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {e}") from e
 
-    session.add(ApiUsage(api_key=api_key, endpoint="/assist"))
+    session.add(ApiUsage(user_id=user.id, endpoint="/assist"))
     await session.commit()
     return AssistResponse(reply=reply)
 
 
-@app.get("/usage/summary", response_model=list[UsageSummary])
-async def usage_summary(
-    hours: int = Query(24, ge=1, le=24*30),
-    session: AsyncSession = Depends(get_session),
-    api_key: str = Depends(require_api_key),
-):
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    q = (select(ApiUsage.endpoint, func.count().cast(Integer).label("calls"))
-         .where(ApiUsage.api_key == api_key, ApiUsage.timestamp >= cutoff)
-         .group_by(ApiUsage.endpoint)
-         .order_by(func.count().desc()))
-    rows = await session.execute(q)
-    return [UsageSummary(endpoint=e, calls=c) for e, c in rows.all()]
-
+# --- Documents --------------------------------------------------------------- #
 @app.get("/documents", response_model=list[DocumentOut])
-async def list_documents(session: AsyncSession = Depends(get_session),
-                         api_key: str = Depends(require_api_key)):
-    # look up user id by api_key
-    user_id = await session.scalar(select(User.id).where(User.api_key == api_key))
-    if user_id is None:
-        # shouldn't happen because require api key just checked, but just in case
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    docs = (await session.execute(
-        select(Document)
-        .where(Document.owner_id == user_id)
-        .order_by(Document.created_at.desc())
-    )).scalars().all()
-
+async def list_documents(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    docs = (
+        await session.execute(
+            select(Document)
+            .where(Document.owner_id == user.id)
+            .order_by(Document.created_at.desc())
+        )
+    ).scalars().all()
     return docs
-    
+
 
 @app.post("/documents", response_model=DocumentOut, status_code=201)
 async def create_doc(
     payload: DocumentCreate,
     session: AsyncSession = Depends(get_session),
-    api_key: str = Depends(require_api_key)
+    user: User = Depends(get_current_user),
 ):
-    user_id = await session.scalar(select(User.id).where(User.api_key == api_key))
-    doc = Document(owner_id=user_id, title=payload.title, content=payload.content)
+    doc = Document(owner_id=user.id, title=payload.title, content=payload.content)
     session.add(doc)
     await session.commit()
     await session.refresh(doc)

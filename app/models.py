@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import (String, Integer, DateTime, ForeignKey, func, Text, Index, UniqueConstraint, MetaData)
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import String, Integer, DateTime, ForeignKey, func, Text, Index, UniqueConstraint, MetaData, ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, relationship
 # ^ SQLAlchemy 2.x typing-friendly API
 
 
@@ -37,12 +37,12 @@ class ApiUsage(Base):
     __tablename__ = "api_usage"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    api_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     endpoint: Mapped[str] = mapped_column(String(128), nullable=False)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
     __table_args__ = (
-        Index("ix_api_usage_api_key_endpoint_time", "api_key", "endpoint", "timestamp"),
+        Index("ix_api_usage_api_key_endpoint_time", "user_id", "endpoint", "timestamp"),
     )
 
 class Document(Base):
